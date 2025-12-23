@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "displaymux (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "displaymux (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

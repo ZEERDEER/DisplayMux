@@ -1,0 +1,13 @@
+# Visual Studio 临时文件
+.vs/
+.vscode/
+
+# 编译产生的垃圾文件 (bin 和 obj 里的东西每次生成都会变，不需要上传)
+bin/
+obj/
+
+# 用户个人配置
+*.user
+*.suo
+*.userosscache
+*.sln.docstates

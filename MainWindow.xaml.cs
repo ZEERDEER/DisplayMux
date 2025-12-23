@@ -1,26 +1,53 @@
-using Microsoft.UI;
+ï»¿using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
+using System.Collections.Generic; // å¼•ç”¨ List ç”¨äºæ’åº
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq; // å¼•ç”¨ Linq ç”¨äºæ’åº
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using WinRT.Interop;
 
 namespace displaymux
 {
-    // Éı¼¶ºóµÄÊı¾İÄ£ĞÍÀà
-    public class DisplayMonitor
+    // ==========================================
+    // 1. æ•°æ®æ¨¡å‹ç±»
+    // ==========================================
+    public class DisplayMonitor : INotifyPropertyChanged
     {
         public string Name { get; set; }
         public IntPtr Handle { get; set; }
-        // ĞÂÔö£º´æ´¢µ±Ç°ÊäÈëµÄÊı×Ö´úÂë (ÀıÈç 15)
-        public uint CurrentInputCode { get; set; }
 
-        // ĞÂÔö£ºÒ»¸ö¸¨ÖúÊôĞÔ£¬°ÑÊı×Ö´úÂë×Ô¶¯·­Òë³É¸øÈË¿´µÄÎÄ×Ö
-        // ½çÃæ»áÖ±½Ó°ó¶¨Õâ¸öÊôĞÔ
+        // æ˜¾ç¤ºå™¨ç¼–å· (1, 2, 3...)
+        public int MonitorId { get; set; }
+
+        // ç”¨äºæ˜¾ç¤ºçš„å®Œæ•´åç§°ï¼Œä¾‹å¦‚ "1. Dell U2720Q"
+        // âš ï¸ è®°å¾—åœ¨ XAML é‡ŒæŠŠ Text="{Binding Name}" æ”¹æˆ Text="{Binding DisplayName}"
+        public string DisplayName => $"{MonitorId}. {Name}";
+
+        private uint _currentInputCode;
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public uint CurrentInputCode
+        {
+            get => _currentInputCode;
+            set
+            {
+                if (_currentInputCode != value)
+                {
+                    _currentInputCode = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(CurrentInputName));
+                }
+            }
+        }
+
+        // åªä¿ç•™æ‚¨éœ€è¦çš„æ¥å£
         public string CurrentInputName
         {
             get
@@ -30,14 +57,25 @@ namespace displaymux
                     case 15: return "DisplayPort";
                     case 17: return "HDMI 1";
                     case 18: return "HDMI 2";
-                    case 27: return "Type-C";
-                    case 0: return "Î´Öª/ÕıÔÚ»ñÈ¡..."; // Ä¬ÈÏÖµ
-                    default: return $"Î´Öª½Ó¿Ú ({CurrentInputCode})";
+
+                    case 0: return "æœªçŸ¥/æ­£åœ¨è·å–...";
+                    default: return $"æœªçŸ¥æ¥å£ ({CurrentInputCode})";
                 }
             }
         }
+
+        private void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        // è¾…åŠ©å­—æ®µï¼šç”¨äºæ’åºçš„ X åæ ‡
+        public int ScreenLeft { get; set; }
     }
 
+    // ==========================================
+    // 2. ä¸»çª—å£é€»è¾‘
+    // ==========================================
     public sealed partial class MainWindow : Window
     {
         public ObservableCollection<DisplayMonitor> Monitors { get; set; } = new();
@@ -47,7 +85,6 @@ namespace displaymux
             this.InitializeComponent();
             this.SystemBackdrop = new MicaBackdrop();
             this.ExtendsContentIntoTitleBar = true;
-            // ÉÔÎ¢µ÷¸ßÒ»µã´°¿Ú£¬ÒòÎª¼ÓÁË Padding
             SetWindowSize(680, 500);
             LoadMonitors();
         }
@@ -65,16 +102,27 @@ namespace displaymux
             LoadMonitors();
         }
 
-        // Éı¼¶ºóµÄÉ¨ÃèÂß¼­£ºÉ¨ÃèµÄÍ¬Ê±¶ÁÈ¡µ±Ç°×´Ì¬
-        // ×¢Òâ£º¶ÁÈ¡²Ù×÷¿ÉÄÜ»áÈÃÉ¨Ãè¹ı³ÌÉÔÎ¢±äÂıÒ»µãµã£¬ÕâÊÇÕı³£µÄ
         private void LoadMonitors()
         {
-            StatusText.Text = "ÕıÔÚÉ¨ÃèÏÔÊ¾Æ÷²¢¶ÁÈ¡µ±Ç°×´Ì¬...";
-            Monitors.Clear();
+            StatusText.Text = "æ­£åœ¨æ‰«ææ˜¾ç¤ºå™¨...";
+
+            var tempList = new List<DisplayMonitor>();
 
             MonitorController.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
                 delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref MonitorController.Rect lprcMonitor, IntPtr dwData)
                 {
+                    // 1. è·å– Windows ç¼–å·
+                    var mi = new MonitorController.MONITORINFOEX();
+                    mi.Size = Marshal.SizeOf(mi);
+                    int monitorId = 0;
+                    if (MonitorController.GetMonitorInfo(hMonitor, ref mi))
+                    {
+                        string devName = mi.DeviceName;
+                        string numberStr = devName.Replace(@"\\.\DISPLAY", "");
+                        int.TryParse(numberStr, out monitorId);
+                    }
+
+                    // 2. è·å–ç‰©ç†æ˜¾ç¤ºå™¨å¥æŸ„
                     uint count;
                     if (MonitorController.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, out count) && count > 0)
                     {
@@ -83,41 +131,40 @@ namespace displaymux
                         {
                             foreach (var pm in physicalMonitors)
                             {
-                                // 1. ´´½¨»ù±¾ĞÅÏ¢
                                 var newMonitor = new DisplayMonitor
                                 {
                                     Name = pm.szPhysicalMonitorDescription.Replace("\0", ""),
                                     Handle = pm.hPhysicalMonitor,
-                                    CurrentInputCode = 0 // ÏÈÉèÎª0
+                                    CurrentInputCode = 0,
+                                    MonitorId = monitorId,
+                                    ScreenLeft = lprcMonitor.left
                                 };
 
-                                // 2. ¡¾¹Ø¼üĞÂÔö¡¿³¢ÊÔ¶ÁÈ¡µ±Ç°µÄÊäÈëÔ´ (VCP Code 0x60)
+                                // è¯»å–åˆå§‹çŠ¶æ€
                                 uint currentValue = 0;
-                                uint maxValue = 0;
-                                // µ÷ÓÃµ×²ã API ¶ÁÈ¡
-                                bool readSuccess = MonitorController.GetVCPFeatureAndVCPFeatureReply(
-                                    pm.hPhysicalMonitor,
-                                    0x60, // 0x60 ÊÇÊäÈëÔ´¼Ä´æÆ÷µØÖ·
-                                    out _, // ÎÒÃÇ²»ĞèÒªÀàĞÍĞÅÏ¢
-                                    out currentValue, // ¶ÁÈ¡µ½µÄµ±Ç°Öµ
-                                    out maxValue // ¶ÁÈ¡µ½µÄ×î´óÖµ£¨Ò²²»ĞèÒª£©
-                                );
-
-                                if (readSuccess)
+                                if (MonitorController.GetVCPFeatureAndVCPFeatureReply(pm.hPhysicalMonitor, 0x60, out _, out currentValue, out _))
                                 {
-                                    // Èç¹û¶ÁÈ¡³É¹¦£¬¸üĞÂÄ£ĞÍ£¬½çÃæ»á×Ô¶¯±ä»¯
                                     newMonitor.CurrentInputCode = currentValue;
                                 }
 
-                                Monitors.Add(newMonitor);
+                                tempList.Add(newMonitor);
                             }
                         }
                     }
                     return true;
                 }, 0);
 
+            // 3. æŒ‰å±å¹•ä½ç½®ä»å·¦åˆ°å³æ’åº
+            var sortedList = tempList.OrderBy(x => x.ScreenLeft).ToList();
+
+            Monitors.Clear();
+            foreach (var m in sortedList)
+            {
+                Monitors.Add(m);
+            }
+
             MonitorListView.ItemsSource = Monitors;
-            StatusText.Text = $"É¨ÃèÍê³É£¬¹²ÕÒµ½ {Monitors.Count} Ì¨ÏÔÊ¾Æ÷¡£";
+            StatusText.Text = $"æ‰«æå®Œæˆï¼Œå…±æ‰¾åˆ° {Monitors.Count} å°æ˜¾ç¤ºå™¨ã€‚";
         }
 
         private async void OnApplyClick(object sender, RoutedEventArgs e)
@@ -128,7 +175,6 @@ namespace displaymux
             if (monitor == null) return;
 
             var parent = VisualTreeHelper.GetParent(button) as Grid;
-            // ÒòÎªÇ°Ãæ¼ÓÁËÒ»ÁĞÍ¼±ê£¬ËùÒÔÏÂÀ­¿òÏÖÔÚÊÇµÚ3¸öÔªËØ (index 2)
             var comboBox = parent.Children[2] as ComboBox;
 
             if (comboBox != null && comboBox.SelectedItem is ComboBoxItem selectedItem)
@@ -136,56 +182,80 @@ namespace displaymux
                 uint targetCode = uint.Parse(selectedItem.Tag.ToString());
                 string inputName = selectedItem.Content.ToString();
 
-                StatusText.Text = $"ÕıÔÚ½« [{monitor.Name}] ÇĞ»»ÖÁ {inputName}...";
+                StatusText.Text = $"æ­£åœ¨åˆ‡æ¢ {monitor.DisplayName} ...";
                 button.IsEnabled = false;
 
-                bool success = await Task.Run(() =>
+                // 1. å‘é€åˆ‡æ¢æŒ‡ä»¤
+                bool sendSuccess = await Task.Run(() =>
                     MonitorController.SetVCPFeature(monitor.Handle, 0x60, targetCode));
 
-                if (success)
+                if (sendSuccess)
                 {
-                    StatusText.Text = $"[{monitor.Name}] ÇĞ»»Ö¸ÁîÒÑ·¢ËÍ£¡";
-                    // ÇĞ»»³É¹¦ºó£¬ÊÖ¶¯¸üĞÂÒ»ÏÂ½çÃæÏÔÊ¾µÄ¡°µ±Ç°ÊäÈë¡±£¬ÈÃÌåÑé¸üÁ÷³©
-                    // (ËäÈ»ÏÔÊ¾Æ÷×Ô¼º·´Ó¦¹ıÀ´ĞèÒª¼¸ÃëÖÓ)
+                    // 2. ä¹è§‚æ›´æ–°ï¼šç«‹åˆ»æŠŠç•Œé¢æ–‡å­—æ”¹æˆç›®æ ‡æ¥å£ (ä¸‹æ‹‰èœå•ä¸ä¼šåŠ¨)
                     monitor.CurrentInputCode = targetCode;
-                    // Í¨Öª½çÃæÊı¾İ±äÁË (¼òµ¥´Ö±©µÄ·½·¨£ºË¢ĞÂÒ»ÏÂÁĞ±íÏî)
-                    int index = Monitors.IndexOf(monitor);
-                    Monitors[index] = monitor;
+
+                    StatusText.Text = $"æŒ‡ä»¤å·²å‘é€ï¼Œç­‰å¾…æ˜¾ç¤ºå™¨ç¡®è®¤...";
+
+                    // 3. ã€å…³é”®å»¶è¿Ÿã€‘ç­‰å¾… 6 ç§’ï¼Œç»™æ˜¾ç¤ºå™¨è¶³å¤Ÿçš„â€œåæ‚”æ—¶é—´â€
+                    await Task.Delay(6000);
+
+                    // 4. å›å¤´æŸ¥å²—ï¼šè¯»å–çœŸå®çŠ¶æ€
+                    uint realCode = 0;
+                    bool readSuccess = await Task.Run(() =>
+                        MonitorController.GetVCPFeatureAndVCPFeatureReply(monitor.Handle, 0x60, out _, out realCode, out _));
+
+                    if (readSuccess)
+                    {
+                        // å¦‚æœæ˜¾ç¤ºå™¨è·³å›å»äº†ï¼Œè¿™é‡Œä¼šè¯»åˆ°æ—§æ¥å£ï¼Œç•Œé¢æ–‡å­—ä¼šè‡ªåŠ¨å˜å›å»
+                        monitor.CurrentInputCode = realCode;
+                        StatusText.Text = $"[{monitor.Name}] çŠ¶æ€ç¡®è®¤å®Œæˆã€‚";
+                    }
+                    else
+                    {
+                        StatusText.Text = $"[{monitor.Name}] æ— æ³•ç¡®è®¤æœ€ç»ˆçŠ¶æ€ã€‚";
+                    }
                 }
                 else
                 {
-                    StatusText.Text = $"[{monitor.Name}] ÇĞ»»Ê§°Ü£¬¿ÉÄÜ²»Ö§³Ö DDC/CI¡£";
+                    StatusText.Text = "åˆ‡æ¢å¤±è´¥ï¼Œå¯èƒ½ä¸æ”¯æŒ DDC/CIã€‚";
                 }
-
                 button.IsEnabled = true;
             }
         }
     }
 
     // ==========================================
-    // µ×²ã API °áÔË¹¤ (Éı¼¶°æ)
+    // 3. åº•å±‚ API
     // ==========================================
     public static class MonitorController
     {
         [DllImport("user32.dll")]
         public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, int dwData);
-
         public delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
 
         [StructLayout(LayoutKind.Sequential)]
         public struct Rect { public int left; public int top; public int right; public int bottom; }
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        public struct MONITORINFOEX
+        {
+            public int Size;
+            public Rect Monitor;
+            public Rect WorkArea;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string DeviceName;
+        }
+
         [DllImport("dxva2.dll")]
         public static extern bool GetPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, uint dwPhysicalMonitorArraySize, [Out] PHYSICAL_MONITOR[] pPhysicalMonitorArray);
-
         [DllImport("dxva2.dll")]
         public static extern bool GetNumberOfPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, out uint pdwNumberOfPhysicalMonitors);
-
-        // Ğ´Ö¸Áî (ÇĞ»»ÊäÈëÓÃÕâ¸ö)
         [DllImport("dxva2.dll")]
         public static extern bool SetVCPFeature(IntPtr hMonitor, uint bVCPCode, uint dwNewValue);
-
-        // ¡¾ĞÂÔö¡¿¶ÁÖ¸Áî (»ñÈ¡µ±Ç°ÊäÈëÓÃÕâ¸ö)
         [DllImport("dxva2.dll")]
         public static extern bool GetVCPFeatureAndVCPFeatureReply(IntPtr hMonitor, uint bVCPCode, out uint pvct, out uint pdwCurrentValue, out uint pdwMaximumValue);
 

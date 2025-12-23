@@ -83,7 +83,7 @@
                                   VerticalAlignment="Center" Margin="0,0,20,0"/>
 
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,20,0">
-                            <TextBlock Text="{Binding Name}" Style="{StaticResource SubtitleTextBlockStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding DisplayName}" Style="{StaticResource SubtitleTextBlockStyle}" FontWeight="Bold"/>
                             
                             <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Margin="0,6,0,0">
                                 <Run Text="当前输入: " Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>

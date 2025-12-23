@@ -4,9 +4,6 @@
   <p>
     <b>现代化的 Windows 显示器输入源切换工具</b>
   </p>
-  <p>
-    Designed by <b>ZEERDEER</b>
-  </p>
   
   <a href="https://github.com/ZEERDEER/DisplayMux/releases">
     <img src="https://img.shields.io/github/v/release/ZEERDEER/DisplayMux?style=flat-square&color=0078D4" alt="Latest Release">

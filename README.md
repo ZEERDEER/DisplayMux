@@ -34,9 +34,7 @@
 
 > **🚀 点击这里下载最新版本：[Releases · ZEERDEER/DisplayMux](https://github.com/ZEERDEER/DisplayMux/releases)**
 
-1.  点击上方链接进入 **Release** 页面。
-2.  下载最新的 DisplayMux.exe (单文件版) 或 .msixbundle (安装版)。
-3.  运行软件即可使用。
+1.  解压后右键 **install.ps1** 以Powershell运行
 
 ---
 
